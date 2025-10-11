@@ -5,16 +5,16 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, Upd
 from telegram.ext import Application, CommandHandler
 from dotenv import load_dotenv
 
-# Загружаем .env локально
+# Загружаем переменные из .env
 load_dotenv()
 
 TOKEN = os.environ.get("BOT_TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-# Flask приложение
+# Flask-приложение
 app = Flask(__name__)
 
-# Telegram приложение
+# Telegram Application
 application = Application.builder().token(TOKEN).build()
 
 # Команда /start
@@ -31,25 +31,25 @@ async def start(update: Update, context):
         reply_markup=reply_markup
     )
 
-# Регистрируем обработчик команды
+# Добавляем обработчик
 application.add_handler(CommandHandler("start", start))
 
-# Роут для Webhook
-@app.post("/")
-async def webhook():
+# Webhook эндпоинт
+@app.route("/", methods=["POST"])
+def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, application.bot)
-    await application.process_update(update)
+    asyncio.run(application.process_update(update))
     return "ok"
 
-# Основной запуск
+# Устанавливаем Webhook и запускаем сервер
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
 
-    async def main():
-        # Устанавливаем webhook перед запуском Flask
+    async def setup():
         await application.bot.set_webhook(WEBHOOK_URL)
         print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-        await app.run_task(host="0.0.0.0", port=port)
 
-    asyncio.run(main())
+    asyncio.run(setup())
+
+    app.run(host="0.0.0.0", port=port)
