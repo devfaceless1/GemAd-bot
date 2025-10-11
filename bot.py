@@ -2,33 +2,36 @@ import os
 import asyncio
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = f"https://gemad-bot.onrender.com"  # твой URL на Render
+WEBHOOK_URL = "https://gemad-bot.onrender.com"  # замени на свой Render URL
 
-bot = Bot(token=TOKEN)
 app = Flask(__name__)
+bot = Bot(token=TOKEN)
 
-# Создаем event loop для асинхронных операций
+# создаем event loop
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-# Создаем и инициализируем Telegram приложение
+# создаем и инициализируем приложение
 application = Application.builder().token(TOKEN).build()
-loop.run_until_complete(application.initialize())
 
 # === Команды ===
-async def start(update: Update, context):
-    await update.message.reply_text("Привет! Бот успешно работает на Render 🚀")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 Привет! Бот запущен и работает на Render 🚀")
 
-async def echo(update: Update, context):
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(update.message.text)
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-# === Flask Webhook ===
+# инициализация приложения
+loop.run_until_complete(application.initialize())
+loop.run_until_complete(application.start())  # <-- ключевая строчка!
+
+# === Flask webhook ===
 @app.route("/", methods=["POST", "GET"])
 def webhook():
     if request.method == "POST":
@@ -38,12 +41,16 @@ def webhook():
         return "ok"
     return "Bot is running! ✅"
 
-# === Устанавливаем webhook при запуске ===
+# === устанавливаем webhook при старте ===
 async def set_webhook():
-    await bot.set_webhook(url=WEBHOOK_URL)
+    webhook_info = await bot.get_webhook_info()
+    if webhook_info.url != WEBHOOK_URL:
+        await bot.delete_webhook()
+        await bot.set_webhook(url=WEBHOOK_URL)
+        print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 
 if __name__ == "__main__":
-    print("✅ Устанавливаем webhook...")
+    print("🚀 Запуск бота...")
     loop.run_until_complete(set_webhook())
-    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+    print("✅ Всё готово. Flask сервер запущен.")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
