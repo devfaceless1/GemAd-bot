@@ -13,7 +13,7 @@ app = Flask(__name__)
 application = Application.builder().token(TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("➡ Получена команда /start от", update.effective_user.id)
+    print("➡ /start ", update.effective_user.id)
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("Open a Mini App", web_app=WebAppInfo(url=MINIAPP_URL))]]
     )
