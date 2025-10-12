@@ -1,57 +1,57 @@
 import os
-from flask import Flask, request
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, Update
-from telegram.ext import Application, CommandHandler
-from dotenv import load_dotenv
 import asyncio
+from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Загружаем .env локально (на Render берётся из Environment Variables)
-load_dotenv()
+TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = "https://gemad-bot.onrender.com"
+MINIAPP_URL = "https://gemad.onrender.com"
 
-TOKEN = os.environ.get("BOT_TOKEN")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-
-# Создаём Flask-приложение
 app = Flask(__name__)
 
-# Создаём Telegram-приложение
 application = Application.builder().token(TOKEN).build()
 
-
-# Команда /start
-async def start(update: Update, context):
-    keyboard = [
-        [InlineKeyboardButton(
-            "Открыть Mini App",
-            web_app=WebAppInfo(url="https://your-mini-app.com")
-        )]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("➡ Получена команда /start от", update.effective_user.id)
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Open a Mini App", web_app=WebAppInfo(url=MINIAPP_URL))]]
+    )
     await update.message.reply_text(
-        "Нажми кнопку, чтобы открыть мини-приложение:",
-        reply_markup=reply_markup
+        "Click the button to open a Mini App 🚀",
+        reply_markup=keyboard
     )
 
-# Добавляем обработчик команды /start
 application.add_handler(CommandHandler("start", start))
 
+async def setup():
 
-# Роут для Webhook
-@app.post("/")
-async def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)
-    return "ok"
+    await application.initialize()
+    await application.start()
 
+    info = await application.bot.get_webhook_info()
+    if info.url != WEBHOOK_URL:
+        await application.bot.delete_webhook()
+        await application.bot.set_webhook(WEBHOOK_URL)
+        print(f"✅ Webhook: {WEBHOOK_URL}")
+    else:
+        print("🔁 Webhook")
 
-# Устанавливаем Webhook при запуске
-@app.before_serving
-async def setup_webhook():
-    await application.bot.set_webhook(WEBHOOK_URL)
+# === Flask endpoint ===
+@app.route("/", methods=["POST", "GET"])
+def webhook():
+    if request.method == "POST":
+        data = request.get_json(force=True)
+        print("📨 Update от Telegram:", data)
+        update = Update.de_json(data, application.bot)
+        asyncio.run(application.process_update(update))
+        return "ok"
+    return "Bot is working!"
 
-
-# Запуск Flask-сервера
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    asyncio.run(app.run_task(host="0.0.0.0", port=port))
+    print("🚀 Bot starts...")
+    asyncio.run(setup())
+    print("✅Flask is running...")
+    import time
+    time.sleep(4)  
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
