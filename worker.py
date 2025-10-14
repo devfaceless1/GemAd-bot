@@ -5,7 +5,9 @@ from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from dotenv import load_dotenv
+import nest_asyncio
 
+nest_asyncio.apply()
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -32,12 +34,14 @@ async def process_queue():
                         {"$inc": {"balance": reward, "totalEarned": reward},
                          "$addToSet": {"subscribedChannels": channel}}
                     )
-                    await bot.send_message(telegram_id, f"🎉 Ты был подписан 12 часов и получил {reward}⭐ звёзд!")
+                    await bot.send_message(telegram_id, f"🎉 Ты был подписан 5 минут и получил {reward}⭐!")
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
             except Exception as e:
                 print(f"Ошибка проверки {telegram_id}: {e}")
-        await asyncio.sleep(600)  
+        await asyncio.sleep(10)  # быстрый тест каждые 10 секунд
 
-asyncio.run(process_queue())
+loop = asyncio.get_event_loop()
+loop.create_task(process_queue())
+loop.run_forever()
