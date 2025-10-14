@@ -3,6 +3,9 @@ import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
+import nest_asyncio
+nest_asyncio.apply()
+
 
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = "https://gemad-bot.onrender.com"
@@ -44,9 +47,11 @@ async def setup():
 def webhook():
     if request.method == "POST":
         data = request.get_json(force=True)
-        print("📨 Update от Telegram:", data)
         update = Update.de_json(data, application.bot)
-        asyncio.run(application.process_update(update))
+        # Используем текущий loop вместо asyncio.run
+        loop = asyncio.get_event_loop()
+        loop.create_task(application.process_update(update))
+
         return "ok"
     return "Bot is working!"
 
