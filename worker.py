@@ -19,29 +19,48 @@ db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
+CHECK_INTERVAL = 60  # секунд между проверками очереди
+
 async def process_queue():
     while True:
         now = datetime.utcnow()
         async for task in pending.find({"status": "waiting", "checkAfter": {"$lte": now}}):
             telegram_id = int(task["telegramId"])
             channel = task["channel"]
+            reward = task.get("reward", 15)
+
+            # Проверяем, не начисляли ли уже пользователю за этот канал
+            user_doc = await users.find_one({"telegramId": str(telegram_id)})
+            if user_doc and channel in user_doc.get("subscribedChannels", []):
+                await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
+                continue
+
             try:
                 member = await bot.get_chat_member(chat_id=channel, user_id=telegram_id)
                 if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                    reward = 15
+                    # Начисляем звёзды
                     await users.update_one(
                         {"telegramId": str(telegram_id)},
-                        {"$inc": {"balance": reward, "totalEarned": reward},
-                         "$addToSet": {"subscribedChannels": channel}}
+                        {
+                            "$inc": {"balance": reward, "totalEarned": reward},
+                            "$addToSet": {"subscribedChannels": channel}
+                        },
+                        upsert=True
                     )
-                    await bot.send_message(telegram_id, f"🎉 Ты был подписан 5 минут и получил {reward}⭐!")
+                    await bot.send_message(
+                        telegram_id,
+                        f"🎉 Ты был подписан 5 минут и получил {reward}⭐!"
+                    )
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
             except Exception as e:
                 print(f"Ошибка проверки {telegram_id}: {e}")
-        await asyncio.sleep(10)  # быстрый тест каждые 10 секунд
 
-loop = asyncio.get_event_loop()
-loop.create_task(process_queue())
-loop.run_forever()
+        await asyncio.sleep(CHECK_INTERVAL)
+
+if __name__ == "__main__":
+    print("🚀 Checker запущен...")
+    loop = asyncio.get_event_loop()
+    loop.create_task(process_queue())
+    loop.run_forever()
