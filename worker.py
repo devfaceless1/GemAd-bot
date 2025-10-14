@@ -24,14 +24,18 @@ CHECK_INTERVAL = 60  # секунд между проверками очеред
 async def process_queue():
     while True:
         now = datetime.utcnow()
+        print(f"⏱ Проверка очереди: {now.isoformat()}")
         async for task in pending.find({"status": "waiting", "checkAfter": {"$lte": now}}):
             telegram_id = int(task["telegramId"])
             channel = task["channel"]
             reward = task.get("reward", 15)
 
+            print(f"🔹 Проверяем задачу: user={telegram_id}, channel={channel}, reward={reward}")
+
             # Проверяем, не начисляли ли уже пользователю за этот канал
             user_doc = await users.find_one({"telegramId": str(telegram_id)})
             if user_doc and channel in user_doc.get("subscribedChannels", []):
+                print(f"⚠ Пользователь {telegram_id} уже подписан на {channel}, пропускаем")
                 await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
                 continue
 
@@ -52,10 +56,12 @@ async def process_queue():
                         f"🎉 Ты был подписан 5 минут и получил {reward}⭐!"
                     )
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
+                    print(f"✅ Начислены {reward}⭐ пользователю {telegram_id} за {channel}")
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
+                    print(f"❌ Пользователь {telegram_id} не подписан на {channel}, отметка failed")
             except Exception as e:
-                print(f"Ошибка проверки {telegram_id}: {e}")
+                print(f"⚠ Ошибка проверки {telegram_id} на канале {channel}: {e}")
 
         await asyncio.sleep(CHECK_INTERVAL)
 
