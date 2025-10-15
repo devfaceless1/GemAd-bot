@@ -93,7 +93,8 @@ async def start_handler(message: types.Message):
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    await dp.feed_update(update)  # корректно для Aiogram v3
+    # Ключевая правка: feed_raw_update вместо feed_update
+    await dp.feed_raw_update(update)
     return PlainTextResponse("ok")
 
 # =======================
