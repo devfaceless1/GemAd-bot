@@ -31,6 +31,44 @@ db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
+
+# ======================
+# /start handler
+# ======================
+@dp.message(Command(commands=["start"]))
+async def start_handler(message: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
+    ])
+    await message.answer("Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
+
+# ======================
+# Webhook
+# ======================
+@app.post("/")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = types.Update(**data)
+    
+    # ✅ Правильный вызов для Aiogram v3
+    await dp.feed_update(bot, update)  # bot — первый аргумент, update — второй
+
+    return PlainTextResponse("ok")
+
+# ======================
+# Root
+# ======================
+@app.get("/")
+def root():
+    return PlainTextResponse("Bot is running!")
+
+# ======================
+# Startup
+# ======================
+@app.on_event("startup")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+    print(f"Webhook установлен: {WEBHOOK_URL}")
 # =======================
 # Checker
 # =======================
