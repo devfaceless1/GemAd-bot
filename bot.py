@@ -5,7 +5,6 @@ from aiogram import Bot, types
 from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 
 load_dotenv()
