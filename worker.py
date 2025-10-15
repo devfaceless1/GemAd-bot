@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from dotenv import load_dotenv
 import nest_asyncio
+import asyncio
 
 nest_asyncio.apply()
 load_dotenv()
@@ -60,6 +61,9 @@ async def process_queue():
 
 if __name__ == "__main__":
     print("🚀 Checker запущен...")
-    loop = asyncio.get_event_loop()
-    loop.create_task(process_queue())
+    import asyncio
+
+    loop = asyncio.get_running_loop() 
+    asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+
     loop.run_forever()
