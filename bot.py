@@ -22,9 +22,6 @@ db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
-# FastAPI
-app = FastAPI()
-
 
 # === /start handler (optional, can add later) ===
 async def send_start_message(chat_id: int):
