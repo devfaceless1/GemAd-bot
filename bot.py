@@ -34,41 +34,39 @@ users = db["users"]
 # =======================
 # Checker подписок
 # =======================
-async def process_queue():
-    while True:
-        now = datetime.utcnow()
-        async for task in pending.find({"status": "waiting", "checkAfter": {"$lte": now}}):
-            telegram_id = int(task["telegramId"])
-            channel = task["channel"]
-            reward = task.get("reward", 15)
 
-            user_doc = await users.find_one({"telegramId": str(telegram_id)})
-            if user_doc and channel in user_doc.get("subscribedChannels", []):
-                await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
-                continue
+async for task in pending.find({"status": "waiting", "checkAfter": {"$lte": datetime.utcnow()}}):
+    telegram_id = str(task["telegramId"])
+    channel = task["channel"]
+    reward = task.get("reward", 15)
 
-            try:
-                member = await bot.get_chat_member(chat_id=channel, user_id=telegram_id)
-                if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                    await users.update_one(
-                        {"telegramId": str(telegram_id)},
-                        {
-                            "$inc": {"balance": reward, "totalEarned": reward},
-                            "$addToSet": {"subscribedChannels": channel}
-                        },
-                        upsert=True
-                    )
-                    await bot.send_message(
-                        telegram_id,
-                        f"🎉 Ты был подписан и получил {reward}⭐!"
-                    )
-                    await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
-                else:
-                    await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
-            except Exception as e:
-                print(f"Ошибка проверки {telegram_id}: {e}")
+    user_doc = await users.find_one({"telegramId": telegram_id})
+    if user_doc and channel in user_doc.get("subscribedChannels", []):
+        await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
+        continue
 
-        await asyncio.sleep(CHECK_INTERVAL)
+    try:
+        # важно: добавляем @ для канала
+        if not channel.startswith("@"):
+            channel = f"@{channel}"
+
+        member = await bot.get_chat_member(chat_id=channel, user_id=int(telegram_id))
+        if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+            await users.update_one(
+                {"telegramId": telegram_id},
+                {
+                    "$inc": {"balance": reward, "totalEarned": reward},
+                    "$addToSet": {"subscribedChannels": channel}
+                },
+                upsert=True
+            )
+            await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
+            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
+        else:
+            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
+    except Exception as e:
+        print(f"Ошибка проверки {telegram_id} на канале {channel}: {e}")
+
 
 # =======================
 # /start handler с картинкой и мини-апп
@@ -76,13 +74,13 @@ async def process_queue():
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
     image_path = "images/gemad.jpg"
-    photo = FSInputFile(image_path)  # вот так правильно для Aiogram v3
+    photo = FSInputFile(image_path)
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Открыть мини-апп",
+                    text="Open Mini App",
                     web_app=WebAppInfo(url="https://gemad.onrender.com/")
                 )
             ]
@@ -91,7 +89,7 @@ async def start_handler(message: types.Message):
 
     await message.answer_photo(
         photo=photo,
-        caption="Привет! Вот кнопка для мини-апп.",
+        caption="GemAd - Earn Telegram Stars for subscribing! ",
         reply_markup=keyboard
     )
 
