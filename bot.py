@@ -1,33 +1,38 @@
 import os
 import asyncio
 from datetime import datetime
-from aiogram import Bot, types, Dispatcher
+from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
+# =======================
+# Настройки
+# =======================
 load_dotenv()
 
-# === CONFIG ===
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://gemad-bot.onrender.com")
-CHECK_INTERVAL = 60
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
+CHECK_INTERVAL = 60  # секунд
 
-# === INIT ===
+# =======================
+# Инициализация
+# =======================
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+app = FastAPI()
+
 mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
-app = FastAPI()
-
-
-# === Background checker ===
+# =======================
+# Checker
+# =======================
 async def process_queue():
     while True:
         now = datetime.utcnow()
@@ -52,7 +57,10 @@ async def process_queue():
                         },
                         upsert=True
                     )
-                    await bot.send_message(telegram_id, f"🎉 Ты подписан и получил {reward}⭐!")
+                    await bot.send_message(
+                        telegram_id,
+                        f"🎉 Ты был подписан и получил {reward}⭐!"
+                    )
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
@@ -61,25 +69,37 @@ async def process_queue():
 
         await asyncio.sleep(CHECK_INTERVAL)
 
-
-# === Telegram webhook ===
+# =======================
+# Webhook
+# =======================
 @app.post("/")
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    await dp.feed_update(bot, update)  # <-- правильный метод!
+    await dp.feed_update(update)  # Важно: Aiogram v3
     return PlainTextResponse("ok")
 
+# =======================
+# Root endpoint
+# =======================
+@app.get("/")
+def root():
+    return PlainTextResponse("Bot is running!")
 
-# === Startup event ===
+# =======================
+# Startup
+# =======================
 @app.on_event("startup")
 async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+
     asyncio.create_task(process_queue())
     print("🚀 Checker запущен...")
 
-
-@app.get("/")
-async def root():
-    return PlainTextResponse("Bot is running!")
+# =======================
+# Пример хэндлера сообщений
+# =======================
+@dp.message()
+async def echo(message: types.Message):
+    await message.answer(f"Echo: {message.text}")
