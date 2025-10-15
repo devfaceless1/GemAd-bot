@@ -75,15 +75,17 @@ async def process_queue():
 # =======================
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
-    # Открываем картинку через with open
-    with open("/gemad.jpg", "rb") as image:
-        # Создаём клавиатуру
+    image_path = "gemad.jpg"  # путь к файлу в текущей папке
+    if not os.path.exists(image_path):
+        await message.answer("⚠️ Файл логотипа не найден на сервере.")
+        return
+
+    with open(image_path, "rb") as image:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
             ]
         )
-        # Отправляем фото
         await message.answer_photo(
             photo=image,
             caption="Привет! 🎉 Добро пожаловать в GemAd!\nНажми кнопку ниже, чтобы открыть мини-приложение 👇",
