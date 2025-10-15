@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 import nest_asyncio
 
-nest_asyncio.apply()  # позволяет использовать event loop в Flask
+nest_asyncio.apply()
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
