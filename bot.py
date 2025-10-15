@@ -45,17 +45,22 @@ async def setup():
         print("🔁 Webhook уже установлен")
 
 # === Flask endpoint ===
+import asyncio
+
 @app.route("/", methods=["POST", "GET"])
 def webhook():
     if request.method == "POST":
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
-        # Используем текущий loop вместо asyncio.run
-        loop = asyncio.get_event_loop()
-        loop.create_task(application.process_update(update))
+
+        # Создаем новый event loop для текущего потока
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(application.process_update(update))
 
         return "ok"
     return "Bot is working!"
+
 
 # === Main ===
 if __name__ == "__main__":
