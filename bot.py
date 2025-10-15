@@ -17,7 +17,7 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 10))  # для теста можно 10 секунд
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 10))
 
 # =======================
 # Инициализация
@@ -32,23 +32,8 @@ pending = db["pendingsubs"]
 users = db["users"]
 
 # =======================
-# Checker подписок с логами
+# Чекер подписок
 # =======================
-@app.on_event("startup")
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    asyncio.create_task(background_checker())
-    print("🚀 Checker запущен...")
-
-async def background_checker():
-    while True:
-        try:
-            await process_queue_iteration()  # отдельная функция на одну итерацию
-        except Exception as e:
-            print(f"[{datetime.utcnow()}] Ошибка в background_checker: {e}")
-        await asyncio.sleep(CHECK_INTERVAL)
-
 async def process_queue_iteration():
     now = datetime.utcnow()
     print(f"[{datetime.utcnow()}] 🔄 Проверка очереди подписок...")
@@ -92,9 +77,16 @@ async def process_queue_iteration():
             print(f"[{datetime.utcnow()}] Ошибка при проверке пользователя {telegram_id} на канале {channel}: {e_inner}")
             await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
 
+async def background_checker():
+    while True:
+        try:
+            await process_queue_iteration()
+        except Exception as e:
+            print(f"[{datetime.utcnow()}] Ошибка в background_checker: {e}")
+        await asyncio.sleep(CHECK_INTERVAL)
 
 # =======================
-# /start handler с картинкой и мини-апп
+# /start handler
 # =======================
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
@@ -128,9 +120,6 @@ async def telegram_webhook(request: Request):
     await dp.feed_update(bot, update)
     return PlainTextResponse("ok")
 
-# =======================
-# Root endpoint
-# =======================
 @app.get("/")
 def root():
     return PlainTextResponse("Bot is running!")
@@ -140,7 +129,21 @@ def root():
 # =======================
 @app.on_event("startup")
 async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    asyncio.create_task(process_queue())  # Запуск чекера подписок
+    # Ставим вебхук безопасно
+    try:
+        await bot.set_webhook(WEBHOOK_URL)
+        print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+    except Exception as e:
+        print(f"⚠️ Не удалось установить вебхук: {e}")
+    
+    # Запускаем чекер подписок
+    asyncio.create_task(background_checker())
     print("🚀 Checker запущен...")
+
+# =======================
+# Shutdown
+# =======================
+@app.on_event("shutdown")
+async def on_shutdown():
+    await bot.session.close()
+    print("🛑 Bot session закрыт")
