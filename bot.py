@@ -2,6 +2,8 @@ import os
 import asyncio
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import FastAPI, Request
@@ -15,7 +17,7 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
-CHECK_INTERVAL = 60
+CHECK_INTERVAL = 60  # секунд
 
 # =======================
 # Инициализация
@@ -30,7 +32,7 @@ pending = db["pendingsubs"]
 users = db["users"]
 
 # =======================
-# Checker
+# Checker (асинхронный)
 # =======================
 async def process_queue():
     while True:
@@ -50,11 +52,16 @@ async def process_queue():
                 if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
                     await users.update_one(
                         {"telegramId": str(telegram_id)},
-                        {"$inc": {"balance": reward, "totalEarned": reward},
-                         "$addToSet": {"subscribedChannels": channel}},
+                        {
+                            "$inc": {"balance": reward, "totalEarned": reward},
+                            "$addToSet": {"subscribedChannels": channel}
+                        },
                         upsert=True
                     )
-                    await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
+                    await bot.send_message(
+                        telegram_id,
+                        f"🎉 Ты был подписан и получил {reward}⭐!"
+                    )
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
@@ -64,14 +71,27 @@ async def process_queue():
         await asyncio.sleep(CHECK_INTERVAL)
 
 # =======================
+# Хэндлер /start
+# =======================
+@dp.message(Command(commands=["start"]))
+async def start_handler(message: types.Message):
+    # Картинка
+    photo = InputFile("start_image.jpg")  # замените на путь к вашей картинке
+    # Кнопка на мини-апп
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Открыть мини-апп", url="https://your-mini-app.com")]
+    ])
+    # Отправка
+    await message.answer_photo(photo=photo, caption="Привет! Вот описание и кнопка для мини-апп.", reply_markup=keyboard)
+
+# =======================
 # Webhook
 # =======================
 @app.post("/")
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    # Для Aiogram v3+ правильный метод:
-    await dp.feed_update(bot, update)
+    await dp.feed_update(update)  # Aiogram v3 корректно обрабатывает обновления
     return PlainTextResponse("ok")
 
 # =======================
@@ -92,7 +112,7 @@ async def on_startup():
     print("🚀 Checker запущен...")
 
 # =======================
-# Пример хэндлера сообщений
+# Пример хэндлера сообщений (echo для всех остальных)
 # =======================
 @dp.message()
 async def echo(message: types.Message):
