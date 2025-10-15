@@ -76,7 +76,7 @@ async def process_queue():
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    await dp.feed_update(update)  # Важно: Aiogram v3
+    await dp.process_update(bot, update)  
     return PlainTextResponse("ok")
 
 # =======================
