@@ -5,6 +5,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppI
 from telegram.ext import Application, CommandHandler, ContextTypes
 import nest_asyncio
 nest_asyncio.apply()
+from dotenv import load_dotenv
+load_dotenv()
 
 
 TOKEN = os.getenv("BOT_TOKEN")
