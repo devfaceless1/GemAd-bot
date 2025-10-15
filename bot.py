@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, WebAppInfo
 from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import FastAPI, Request
@@ -73,11 +73,10 @@ async def process_queue():
 # =======================
 # /start handler с картинкой и мини-апп
 # =======================
-
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
     image_path = "images/gemad.jpg"
-    photo = InputFile(path=image_path)
+    photo = FSInputFile(image_path)  # вот так правильно для Aiogram v3
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -103,7 +102,7 @@ async def start_handler(message: types.Message):
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    await dp.feed_update(bot, update)  # Aiogram v3: bot — первый аргумент, update — второй
+    await dp.feed_update(bot, update)
     return PlainTextResponse("ok")
 
 # =======================
