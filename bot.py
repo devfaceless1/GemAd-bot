@@ -73,29 +73,31 @@ async def process_queue():
 # =======================
 # /start handler с картинкой и мини-апп
 # =======================
+
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
     image_path = "images/gemad.jpg"
 
-    # Правильный способ создать InputFile в Aiogram v3
-    photo = InputFile.from_path(image_path)
+    # Открываем файл бинарно
+    with open(image_path, "rb") as file:
+        photo = InputFile(file)
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Открыть мини-апп",
-                    web_app=WebAppInfo(url="https://gemad.onrender.com/")
-                )
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Открыть мини-апп",
+                        web_app=WebAppInfo(url="https://gemad.onrender.com/")
+                    )
+                ]
             ]
-        ]
-    )
-    await message.answer_photo(
-        photo=photo,
-        caption="Привет! Вот кнопка для мини-апп.",
-        reply_markup=keyboard
-    )
+        )
 
+        await message.answer_photo(
+            photo=photo,
+            caption="Привет! Вот кнопка для мини-апп.",
+            reply_markup=keyboard
+        )
 
 # =======================
 # Webhook
