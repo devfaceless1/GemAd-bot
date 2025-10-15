@@ -12,17 +12,16 @@ from dotenv import load_dotenv
 # Настройки
 # =======================
 load_dotenv()
-
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
-CHECK_INTERVAL = 60  # секунд
+CHECK_INTERVAL = 60
 
 # =======================
 # Инициализация
 # =======================
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot=bot)  # Aiogram v3 требует бот в Dispatcher
+dp = Dispatcher()
 app = FastAPI()
 
 mongo = AsyncIOMotorClient(MONGO_URI)
@@ -51,16 +50,11 @@ async def process_queue():
                 if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
                     await users.update_one(
                         {"telegramId": str(telegram_id)},
-                        {
-                            "$inc": {"balance": reward, "totalEarned": reward},
-                            "$addToSet": {"subscribedChannels": channel}
-                        },
+                        {"$inc": {"balance": reward, "totalEarned": reward},
+                         "$addToSet": {"subscribedChannels": channel}},
                         upsert=True
                     )
-                    await bot.send_message(
-                        telegram_id,
-                        f"🎉 Ты был подписан и получил {reward}⭐!"
-                    )
+                    await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
@@ -76,7 +70,8 @@ async def process_queue():
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    await dp.feed_update(update)  # Aiogram v3
+    # Для Aiogram v3+ правильный метод:
+    await dp.feed_update(bot, update)
     return PlainTextResponse("ok")
 
 # =======================
@@ -91,11 +86,8 @@ def root():
 # =======================
 @app.on_event("startup")
 async def on_startup():
-    # Устанавливаем webhook
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-
-    # Запускаем checker
     asyncio.create_task(process_queue())
     print("🚀 Checker запущен...")
 
