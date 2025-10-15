@@ -4,10 +4,10 @@ from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 import nest_asyncio
-nest_asyncio.apply()
 from dotenv import load_dotenv
-load_dotenv()
 
+nest_asyncio.apply()
+load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = "https://gemad-bot.onrender.com"
@@ -23,12 +23,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [[InlineKeyboardButton("Open App", web_app=WebAppInfo(url=MINIAPP_URL))]]
     )
     
-    photo_path = "GemAd-logo.jpg"  
-    await update.message.reply_photo(
-        photo=open(photo_path, "rb"),
-        caption="🎁 Welcome to GemAd! 🌟 Discover useful deals and earn gifts by subscribing! Launch the mini app and unlock rewards today! 🚀",
-        reply_markup=keyboard
-    )
+    photo_path = "GemAd-logo.jpg"
+    if os.path.exists(photo_path):
+        await update.message.reply_photo(
+            photo=open(photo_path, "rb"),
+            caption="🎁 Welcome to GemAd! 🌟 Discover useful deals and earn gifts by subscribing! Launch the mini app and unlock rewards today! 🚀",
+            reply_markup=keyboard
+        )
+    else:
+        await update.message.reply_text(
+            "🎁 Welcome! Mini app: {}".format(MINIAPP_URL)
+        )
 
 application.add_handler(CommandHandler("start", start))
 
@@ -45,22 +50,16 @@ async def setup():
         print("🔁 Webhook уже установлен")
 
 # === Flask endpoint ===
-import asyncio
-
 @app.route("/", methods=["POST", "GET"])
 def webhook():
     if request.method == "POST":
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
-
-        # Создаем новый event loop для текущего потока
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(application.process_update(update))
-
+        # Используем глобальный loop
+        loop = asyncio.get_event_loop()
+        loop.create_task(application.process_update(update))
         return "ok"
     return "Bot is working!"
-
 
 # === Main ===
 if __name__ == "__main__":
