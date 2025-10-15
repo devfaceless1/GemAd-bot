@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 CHECK_INTERVAL = 60
 
 # =======================
@@ -31,44 +31,6 @@ db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
-
-# ======================
-# /start handler
-# ======================
-@dp.message(Command(commands=["start"]))
-async def start_handler(message: types.Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
-    ])
-    await message.answer("Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
-
-# ======================
-# Webhook
-# ======================
-@app.post("/")
-async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = types.Update(**data)
-    
-    # ✅ Правильный вызов для Aiogram v3
-    await dp.feed_update(bot, update)  # bot — первый аргумент, update — второй
-
-    return PlainTextResponse("ok")
-
-# ======================
-# Root
-# ======================
-@app.get("/")
-def root():
-    return PlainTextResponse("Bot is running!")
-
-# ======================
-# Startup
-# ======================
-@app.on_event("startup")
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"Webhook установлен: {WEBHOOK_URL}")
 # =======================
 # Checker
 # =======================
@@ -90,22 +52,16 @@ async def process_queue():
                 if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
                     await users.update_one(
                         {"telegramId": str(telegram_id)},
-                        {
-                            "$inc": {"balance": reward, "totalEarned": reward},
-                            "$addToSet": {"subscribedChannels": channel}
-                        },
+                        {"$inc": {"balance": reward, "totalEarned": reward},
+                         "$addToSet": {"subscribedChannels": channel}},
                         upsert=True
                     )
-                    await bot.send_message(
-                        telegram_id,
-                        f"🎉 Ты был подписан и получил {reward}⭐!"
-                    )
+                    await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
             except Exception as e:
                 print(f"Ошибка проверки {telegram_id}: {e}")
-
         await asyncio.sleep(CHECK_INTERVAL)
 
 # =======================
@@ -113,10 +69,19 @@ async def process_queue():
 # =======================
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
-    ])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
+        ]
+    )
     await message.answer("Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
+
+# =======================
+# Echo для всех остальных сообщений
+# =======================
+@dp.message()
+async def echo(message: types.Message):
+    await message.answer(f"Echo: {message.text}")
 
 # =======================
 # Webhook
@@ -125,14 +90,11 @@ async def start_handler(message: types.Message):
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-
-    # Правильный способ обработать апдейт
-    await dp.process_update(update)  # единственный аргумент — Update
-
+    await dp.feed_update(bot, update)  # ✅ правильный вызов для Aiogram v3
     return PlainTextResponse("ok")
 
 # =======================
-# Root endpoint
+# Root
 # =======================
 @app.get("/")
 def root():
@@ -143,14 +105,11 @@ def root():
 # =======================
 @app.on_event("startup")
 async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+    try:
+        await bot.set_webhook(WEBHOOK_URL)
+        print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+    except Exception as e:
+        print(f"⚠️ Не удалось установить webhook: {e} (возможно flood control)")
+
     asyncio.create_task(process_queue())
     print("🚀 Checker запущен...")
-
-# =======================
-# Echo для всех остальных сообщений
-# =======================
-@dp.message()
-async def echo(message: types.Message):
-    await message.answer(f"Echo: {message.text}")
