@@ -17,7 +17,7 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 60))
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 10))  # для теста можно 10 секунд
 
 # =======================
 # Инициализация
@@ -70,13 +70,13 @@ async def process_queue():
                             },
                             upsert=True
                         )
-                        print(f"[{datetime.utcnow()}] Reward начислен, modified_count={result.modified_count}")
+                        print(f"[{datetime.utcnow()}] ✅ Reward начислен, modified_count={result.modified_count}")
                         await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
                         await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                         print(f"[{datetime.utcnow()}] Статус задания обновлён: rewarded")
                     else:
                         await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
-                        print(f"[{datetime.utcnow()}] Пользователь не подписан, статус задания: failed")
+                        print(f"[{datetime.utcnow()}] ❌ Пользователь не подписан, статус задания: failed")
 
                 except Exception as e_inner:
                     print(f"[{datetime.utcnow()}] Ошибка при проверке пользователя {telegram_id} на канале {channel}: {e_inner}")
@@ -85,6 +85,7 @@ async def process_queue():
         except Exception as e_outer:
             print(f"[{datetime.utcnow()}] Ошибка при обработке очереди: {e_outer}")
 
+        print(f"[{datetime.utcnow()}] ⏱ Ждём {CHECK_INTERVAL} секунд до следующей проверки")
         await asyncio.sleep(CHECK_INTERVAL)
 
 # =======================
@@ -138,4 +139,3 @@ async def on_startup():
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
     asyncio.create_task(process_queue())  # Запуск чекера подписок
     print("🚀 Checker запущен...")
-

@@ -13,4 +13,5 @@ COPY . .
 ENV PORT=10000
 EXPOSE 10000
 
-CMD ["uvicorn", "bot:app", "--host", "0.0.0.0", "--port", "${PORT}"]
+
+CMD ["uvicorn", "bot:app", "--host", "0.0.0.0", "--port", "${PORT}", "--workers", "1"]
