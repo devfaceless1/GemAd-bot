@@ -76,7 +76,7 @@ async def process_queue():
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    await dp.process_update(bot, update)  
+    await dp.feed_update(update)  # правильно для Aiogram v3
     return PlainTextResponse("ok")
 
 # =======================
@@ -87,19 +87,23 @@ def root():
     return PlainTextResponse("Bot is running!")
 
 # =======================
-# Startup
+# Startup & Shutdown
 # =======================
 @app.on_event("startup")
 async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-
     asyncio.create_task(process_queue())
     print("🚀 Checker запущен...")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await bot.session.close()
 
 # =======================
 # Пример хэндлера сообщений
 # =======================
 @dp.message()
 async def echo(message: types.Message):
-    await message.answer(f"Echo: {message.text}")
+    if message.text:
+        await message.answer(f"Echo: {message.text}")
