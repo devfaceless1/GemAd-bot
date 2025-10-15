@@ -17,7 +17,7 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
-CHECK_INTERVAL = 60  # секунд
+CHECK_INTERVAL = 60
 
 # =======================
 # Инициализация
@@ -32,7 +32,7 @@ pending = db["pendingsubs"]
 users = db["users"]
 
 # =======================
-# Checker (асинхронный)
+# Checker
 # =======================
 async def process_queue():
     while True:
@@ -76,15 +76,9 @@ async def process_queue():
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="Открыть мини-апп",
-            url="https://gemad.onrender.com/"
-        )]
+        [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
     ])
-    await message.answer(
-        "Привет! 🎉 Добро пожаловать в GemAd!\nНажми кнопку ниже, чтобы открыть мини-приложение 👇",
-        reply_markup=keyboard
-    )
+    await message.answer("Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
 
 # =======================
 # Webhook
@@ -94,11 +88,10 @@ async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
 
-    await dp.update.resolve_update(update)
-    await dp.update.process_update(update)
+    # Правильный способ обработать апдейт
+    await dp.process_update(update)  # единственный аргумент — Update
 
     return PlainTextResponse("ok")
-
 
 # =======================
 # Root endpoint
@@ -118,7 +111,7 @@ async def on_startup():
     print("🚀 Checker запущен...")
 
 # =======================
-# Хэндлер для всех остальных сообщений
+# Echo для всех остальных сообщений
 # =======================
 @dp.message()
 async def echo(message: types.Message):
