@@ -75,17 +75,21 @@ async def process_queue():
 # =======================
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
-    photo = InputFile("GemAd-logo.jpg")  # путь к картинке
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
-        ]
-    )
-    await message.answer_photo(
-        photo=photo,
-        caption="Привет! Вот описание и кнопка для мини-апп.",
-        reply_markup=keyboard
-    )
+    # Открываем картинку через with open
+    with open("/gemad.jpg", "rb") as image:
+        # Создаём клавиатуру
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
+            ]
+        )
+        # Отправляем фото
+        await message.answer_photo(
+            photo=image,
+            caption="Привет! 🎉 Добро пожаловать в GemAd!\nНажми кнопку ниже, чтобы открыть мини-приложение 👇",
+            reply_markup=keyboard
+        )
+
 
 # =======================
 # Echo для всех остальных сообщений
