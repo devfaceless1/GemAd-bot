@@ -75,14 +75,24 @@ async def process_queue():
 # =======================
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
-    # Картинка
-    photo = InputFile("GemAd-logo.jpg")  # замените на путь к вашей картинке
-    # Кнопка на мини-апп
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
-    ])
-    # Отправка
-    await message.answer_photo(photo=photo, caption="Привет! Вот описание и кнопка для мини-апп.", reply_markup=keyboard)
+    photo = InputFile("GemAd-logo.jpg")  # путь к картинке
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
+        ]
+    )
+    await message.answer_photo(
+        photo=photo,
+        caption="Привет! Вот описание и кнопка для мини-апп.",
+        reply_markup=keyboard
+    )
+
+# =======================
+# Echo для всех остальных сообщений
+# =======================
+@dp.message()
+async def echo(message: types.Message):
+    await message.answer(f"Echo: {message.text}")
 
 # =======================
 # Webhook
@@ -91,8 +101,10 @@ async def start_handler(message: types.Message):
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
+    # В Aiogram 3.x feed_update требует bot + update
     await dp.feed_update(bot, update)
     return PlainTextResponse("ok")
+
 # =======================
 # Root endpoint
 # =======================
@@ -105,14 +117,10 @@ def root():
 # =======================
 @app.on_event("startup")
 async def on_startup():
+    # Устанавливаем webhook
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+
+    # Запускаем чекер
     asyncio.create_task(process_queue())
     print("🚀 Checker запущен...")
-
-# =======================
-# Пример хэндлера сообщений (echo для всех остальных)
-# =======================
-@dp.message()
-async def echo(message: types.Message):
-    await message.answer(f"Echo: {message.text}")
