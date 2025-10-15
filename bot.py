@@ -4,6 +4,8 @@ from datetime import datetime
 from aiogram import Bot, types
 from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,25 +15,20 @@ MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://gemad-bot.onrender.com")
 CHECK_INTERVAL = 60  # сек
 
-# Telegram bot
+# === Telegram bot ===
 bot = Bot(token=TOKEN)
 
-# MongoDB
+# === MongoDB ===
 mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
-
-# === /start handler (optional, can add later) ===
-async def send_start_message(chat_id: int):
-    await bot.send_message(
-        chat_id,
-        "🎁 Welcome to GemAd! 🌟 Discover deals and earn rewards!"
-    )
+# === FastAPI app ===
+app = FastAPI()
 
 
-# === Checker ===
+# === Checker task ===
 async def process_queue():
     while True:
         now = datetime.utcnow()
