@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import FastAPI, Request
@@ -73,36 +73,18 @@ async def process_queue():
 # =======================
 # Хэндлер /start
 # =======================
-
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
-    image_path = "images/gemad.jpg"  # путь к файлу в текущей папке
-
-    # Проверка наличия файла
-    if not os.path.exists(image_path):
-        await message.answer("⚠️ Файл логотипа не найден на сервере.")
-        return
-
-    # Создаём InputFile
-    photo = InputFile(path=image_path)
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
-        ]
-    )
-
-    await message.answer_photo(
-        photo=photo,
-        caption="Привет! 🎉 Добро пожаловать в GemAd!\nНажми кнопку ниже, чтобы открыть мини-приложение 👇",
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="Открыть мини-апп",
+            url="https://gemad.onrender.com/"
+        )]
+    ])
+    await message.answer(
+        "Привет! 🎉 Добро пожаловать в GemAd!\nНажми кнопку ниже, чтобы открыть мини-приложение 👇",
         reply_markup=keyboard
     )
-# =======================
-# Echo для всех остальных сообщений
-# =======================
-@dp.message()
-async def echo(message: types.Message):
-    await message.answer(f"Echo: {message.text}")
 
 # =======================
 # Webhook
@@ -111,8 +93,7 @@ async def echo(message: types.Message):
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    # В Aiogram 3.x feed_update требует bot + update
-    await dp.feed_update(bot, update)
+    await dp.feed_update(update)  # корректно для Aiogram v3
     return PlainTextResponse("ok")
 
 # =======================
@@ -127,10 +108,14 @@ def root():
 # =======================
 @app.on_event("startup")
 async def on_startup():
-    # Устанавливаем webhook
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-
-    # Запускаем чекер
     asyncio.create_task(process_queue())
     print("🚀 Checker запущен...")
+
+# =======================
+# Хэндлер для всех остальных сообщений
+# =======================
+@dp.message()
+async def echo(message: types.Message):
+    await message.answer(f"Echo: {message.text}")
