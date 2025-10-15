@@ -1,8 +1,10 @@
 import os
 import asyncio
+from datetime import datetime
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
+from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import nest_asyncio
 
@@ -12,43 +14,84 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = "https://gemad-bot.onrender.com"
 MINIAPP_URL = "https://gemad.onrender.com"
+MONGO_URI = os.getenv("MONGO_URI")
 
+# === Flask ===
 app = Flask(__name__)
 
-# === Создаем Telegram Application ===
+# === Telegram Bot ===
 application = Application.builder().token(TOKEN).build()
 
-# === Обработчик команды /start ===
+# === MongoDB ===
+mongo = AsyncIOMotorClient(MONGO_URI)
+db = mongo["mybot_db"]
+pending = db["pendingsubs"]
+users = db["users"]
+
+CHECK_INTERVAL = 60
+
+# === /start handler ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"📩 Получена команда /start от {update.effective_user.id}")
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("Open App 🚀", web_app=WebAppInfo(url=MINIAPP_URL))]]
     )
-
     photo_path = "GemAd-logo.jpg"
     if os.path.exists(photo_path):
         with open(photo_path, "rb") as photo_file:
             await update.message.reply_photo(
                 photo=photo_file,
-                caption="🎁 Welcome to GemAd! 🌟 Discover deals and earn rewards!",
+                caption="🎁 Welcome to GemAd! 🌟",
                 reply_markup=keyboard,
             )
     else:
         await update.message.reply_text(
-            "🎁 Welcome to GemAd! 🌟 Discover deals and earn rewards!",
+            "🎁 Welcome to GemAd! 🌟",
             reply_markup=keyboard,
         )
 
-# === Регистрируем хэндлер ===
 application.add_handler(CommandHandler("start", start))
 
-# === Flask endpoint ===
+# === Checker (подписки) ===
+async def process_queue():
+    while True:
+        now = datetime.utcnow()
+        async for task in pending.find({"status": "waiting", "checkAfter": {"$lte": now}}):
+            telegram_id = int(task["telegramId"])
+            channel = task["channel"]
+            reward = task.get("reward", 15)
+            user_doc = await users.find_one({"telegramId": str(telegram_id)})
+
+            if user_doc and channel in user_doc.get("subscribedChannels", []):
+                await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
+                continue
+
+            try:
+                member = await application.bot.get_chat_member(chat_id=channel, user_id=telegram_id)
+                if member.status in ["member", "administrator", "owner"]:
+                    await users.update_one(
+                        {"telegramId": str(telegram_id)},
+                        {"$inc": {"balance": reward, "totalEarned": reward},
+                         "$addToSet": {"subscribedChannels": channel}},
+                        upsert=True
+                    )
+                    await application.bot.send_message(
+                        telegram_id,
+                        f"🎉 Ты был подписан 5 минут и получил {reward}⭐!"
+                    )
+                    await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
+                else:
+                    await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
+            except Exception as e:
+                print(f"Ошибка проверки {telegram_id}: {e}")
+
+        await asyncio.sleep(CHECK_INTERVAL)
+
+# === Flask webhook endpoint ===
 @app.route("/", methods=["POST", "GET"])
 def webhook():
     if request.method == "POST":
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
-        # Обрабатываем апдейт через основной event loop
         asyncio.run_coroutine_threadsafe(application.process_update(update), main_loop)
         return "ok"
     return "Bot is working!"
@@ -66,7 +109,9 @@ if __name__ == "__main__":
         await application.bot.set_webhook(WEBHOOK_URL)
         print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 
-    main_loop.run_until_complete(init())
+        # Запуск Checker параллельно
+        main_loop.create_task(process_queue())
 
+    main_loop.run_until_complete(init())
     print("✅ Flask сервер запущен...")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
