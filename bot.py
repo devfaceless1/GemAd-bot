@@ -7,6 +7,12 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
+
+
+app = FastAPI()
+
 
 load_dotenv()
 
