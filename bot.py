@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
 from aiogram.enums import ChatMemberStatus
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import FastAPI, Request
@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
 CHECK_INTERVAL = 60
 
 # =======================
@@ -32,7 +32,7 @@ pending = db["pendingsubs"]
 users = db["users"]
 
 # =======================
-# Checker
+# Checker подписок
 # =======================
 async def process_queue():
     while True:
@@ -52,36 +52,47 @@ async def process_queue():
                 if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
                     await users.update_one(
                         {"telegramId": str(telegram_id)},
-                        {"$inc": {"balance": reward, "totalEarned": reward},
-                         "$addToSet": {"subscribedChannels": channel}},
+                        {
+                            "$inc": {"balance": reward, "totalEarned": reward},
+                            "$addToSet": {"subscribedChannels": channel}
+                        },
                         upsert=True
                     )
-                    await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
+                    await bot.send_message(
+                        telegram_id,
+                        f"🎉 Ты был подписан и получил {reward}⭐!"
+                    )
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
                 else:
                     await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
             except Exception as e:
                 print(f"Ошибка проверки {telegram_id}: {e}")
+
         await asyncio.sleep(CHECK_INTERVAL)
 
 # =======================
-# Хэндлер /start
+# /start handler с картинкой и мини-апп
 # =======================
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
+    image_path = "images/gemad.jpg"  # путь к картинке
+    photo = InputFile(image_path)
+
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть мини-апп", url="https://gemad.onrender.com/")]
+            [
+                InlineKeyboardButton(
+                    text="Открыть мини-апп",
+                    web_app=WebAppInfo(url="https://gemad.onrender.com/")
+                )
+            ]
         ]
     )
-    await message.answer("Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
-
-# =======================
-# Echo для всех остальных сообщений
-# =======================
-@dp.message()
-async def echo(message: types.Message):
-    await message.answer(f"Echo: {message.text}")
+    await message.answer_photo(
+        photo=photo,
+        caption="Привет! Вот кнопка для мини-апп.",
+        reply_markup=keyboard
+    )
 
 # =======================
 # Webhook
@@ -90,11 +101,11 @@ async def echo(message: types.Message):
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
-    await dp.feed_update(bot, update)  # ✅ правильный вызов для Aiogram v3
+    await dp.feed_update(bot, update)  # Aiogram v3: bot — первый аргумент, update — второй
     return PlainTextResponse("ok")
 
 # =======================
-# Root
+# Root endpoint
 # =======================
 @app.get("/")
 def root():
@@ -105,11 +116,14 @@ def root():
 # =======================
 @app.on_event("startup")
 async def on_startup():
-    try:
-        await bot.set_webhook(WEBHOOK_URL)
-        print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    except Exception as e:
-        print(f"⚠️ Не удалось установить webhook: {e} (возможно flood control)")
-
+    await bot.set_webhook(WEBHOOK_URL)
+    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
     asyncio.create_task(process_queue())
     print("🚀 Checker запущен...")
+
+# =======================
+# Echo для всех остальных сообщений
+# =======================
+@dp.message()
+async def echo(message: types.Message):
+    await message.answer(f"Echo: {message.text}")
