@@ -20,7 +20,7 @@ db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
-CHECK_INTERVAL = 60  # интервал проверки
+CHECK_INTERVAL = 30  # интервал проверки
 
 app = Flask(__name__)
 
