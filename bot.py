@@ -17,7 +17,7 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 10))  # можно тестово 10 сек
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 10))
 
 # =======================
 # Инициализация
@@ -32,7 +32,7 @@ pending = db["pendingsubs"]
 users = db["users"]
 
 # =======================
-# Фоновый чекер
+# Чекер подписок
 # =======================
 async def process_queue_iteration():
     now = datetime.utcnow()
@@ -42,8 +42,11 @@ async def process_queue_iteration():
         channel = task["channel"]
         reward = task.get("reward", 15)
 
+        print(f"[{datetime.utcnow()}] Проверяем: telegram_id={telegram_id}, channel={channel}, reward={reward}")
+
         user_doc = await users.find_one({"telegramId": telegram_id})
         if user_doc and channel in user_doc.get("subscribedChannels", []):
+            print(f"[{datetime.utcnow()}] Пользователь уже подписан, пропускаем")
             await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
             continue
 
@@ -52,20 +55,26 @@ async def process_queue_iteration():
                 channel = f"@{channel}"
 
             member = await bot.get_chat_member(chat_id=channel, user_id=int(telegram_id))
+            print(f"[{datetime.utcnow()}] Статус пользователя в канале: {member.status}")
+
             if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                await users.update_one(
+                result = await users.update_one(
                     {"telegramId": telegram_id},
-                    {"$inc": {"balance": reward, "totalEarned": reward}, "$addToSet": {"subscribedChannels": channel}},
+                    {
+                        "$inc": {"balance": reward, "totalEarned": reward},
+                        "$addToSet": {"subscribedChannels": channel}
+                    },
                     upsert=True
                 )
+                print(f"[{datetime.utcnow()}] ✅ Reward начислен, modified_count={result.modified_count}")
                 await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
                 await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
-                print(f"[{datetime.utcnow()}] ✅ Reward начислен для {telegram_id}")
+                print(f"[{datetime.utcnow()}] Статус задания обновлён: rewarded")
             else:
                 await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
-                print(f"[{datetime.utcnow()}] ❌ Пользователь не подписан: {telegram_id}")
-        except Exception as e:
-            print(f"[{datetime.utcnow()}] Ошибка для {telegram_id} в {channel}: {e}")
+                print(f"[{datetime.utcnow()}] ❌ Пользователь не подписан, статус задания: failed")
+        except Exception as e_inner:
+            print(f"[{datetime.utcnow()}] Ошибка при проверке пользователя {telegram_id} на канале {channel}: {e_inner}")
             await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
 
 async def background_checker():
@@ -86,11 +95,20 @@ async def start_handler(message: types.Message):
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton("Открыть мини-апп", web_app=WebAppInfo(url="https://gemad.onrender.com/"))]
+            [
+                InlineKeyboardButton(
+                    text="Открыть мини-апп",
+                    web_app=WebAppInfo(url="https://gemad.onrender.com/")
+                )
+            ]
         ]
     )
 
-    await message.answer_photo(photo=photo, caption="Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
+    await message.answer_photo(
+        photo=photo,
+        caption="Привет! Вот кнопка для мини-апп.",
+        reply_markup=keyboard
+    )
 
 # =======================
 # Webhook
@@ -111,15 +129,20 @@ def root():
 # =======================
 @app.on_event("startup")
 async def on_startup():
+    # Ставим вебхук безопасно
     try:
         await bot.set_webhook(WEBHOOK_URL)
         print(f"✅ Webhook установлен: {WEBHOOK_URL}")
     except Exception as e:
         print(f"⚠️ Не удалось установить вебхук: {e}")
-    # Запускаем чекер внутри Web Service
+    
+    # Запускаем чекер подписок
     asyncio.create_task(background_checker())
-    print("🚀 Фоновый чекер запущен...")
+    print("🚀 Checker запущен...")
 
+# =======================
+# Shutdown
+# =======================
 @app.on_event("shutdown")
 async def on_shutdown():
     await bot.session.close()
