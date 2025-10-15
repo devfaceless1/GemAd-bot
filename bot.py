@@ -75,8 +75,10 @@ async def process_queue():
 # =======================
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
-    image_path = "images/gemad.jpg"  # путь к картинке
-    photo = InputFile(image_path)
+    image_path = "images/gemad.jpg"
+
+    # Правильный способ создать InputFile в Aiogram v3
+    photo = InputFile.from_path(image_path)
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -93,6 +95,7 @@ async def start_handler(message: types.Message):
         caption="Привет! Вот кнопка для мини-апп.",
         reply_markup=keyboard
     )
+
 
 # =======================
 # Webhook
