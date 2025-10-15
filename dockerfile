@@ -4,14 +4,12 @@ RUN apt-get update && apt-get install -y build-essential libffi-dev libssl-dev &
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 ENV PORT=10000
-EXPOSE 10000
 
-
-CMD ["uvicorn", "bot:app", "--host", "0.0.0.0", "--port", "${PORT}", "--workers", "1"]
+CMD ["uvicorn", "bot:app", "--host", "0.0.0.0", "--port", "10000"]
