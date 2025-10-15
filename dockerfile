@@ -6,7 +6,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir fastapi==0.115.0 uvicorn==0.25.0 aiogram==3.2.0 motor==3.7.1 pymongo==4.9.1 python-dotenv==1.0.0
 
 COPY . .
 
