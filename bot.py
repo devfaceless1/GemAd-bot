@@ -57,13 +57,6 @@ async def safe_set_webhook(url: str, max_retries: int = 5):
     return False
 
 async def resolve_chat_id(raw_channel):
-    """
-    Попытки получить числовой chat_id:
-    - если raw_channel уже число (int or string startswith -100), возвращаем int
-    - пробуем bot.get_chat(raw) (raw может быть '@username' или 'username' или numeric string)
-    - пробуем добавить '@' если не начинается с '@'
-    Возвращает (chat_id:int) или None при ошибке (и печатает лог).
-    """
     if raw_channel is None:
         return None
 
@@ -140,10 +133,12 @@ async def process_queue_iteration():
             print(f"[{now_str()}] ⚠️ Ошибка чтения users для task {tid}: {e}")
 
         # Попробуем получить статус участника
+                # Попробуем получить статус участника
         try:
             member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
             status = getattr(member, "status", None)
-            print(f"[{now_str()}] ℹ️ Task {tid}: get_chat_member(chat_id={chat_id}, user_id={user_id}) -> status={status}")
+            status_str = str(status).lower() if status else None
+            print(f"[{now_str()}] ℹ️ Task {tid}: get_chat_member(chat_id={chat_id}, user_id={user_id}) -> status={status_str}")
         except Exception as e:
             print(f"[{now_str()}] ⚠️ Ошибка get_chat_member для task {tid}, chat_id={chat_id}, user_id={user_id}: {e}")
             # запишем причину в задачу и пометим failed
@@ -151,7 +146,7 @@ async def process_queue_iteration():
             continue
 
         # Если подписан — начисляем
-        if status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER):
+        if status_str in ("member", "administrator", "creator", "owner"):
             try:
                 res = await users.update_one(
                     {"telegramId": str(user_id)},
@@ -173,7 +168,7 @@ async def process_queue_iteration():
                 await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": f"mongo_update_error: {e}"}})
         else:
             # не подписан
-            print(f"[{now_str()}] ❌ Task {tid}: пользователь {user_id} не является участником ({status}) — помечаю failed")
+            print(f"[{now_str()}] ❌ Task {tid}: пользователь {user_id} не является участником ({status_str}) — помечаю failed")
             await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "memberStatus": str(status)}})
 
     print(f"[{now_str()}] ⏱ Итерация завершена")
