@@ -12,4 +12,8 @@ COPY . .
 
 ENV PORT=10000
 
+# Для вебхука
 CMD ["uvicorn", "bot:app", "--host", "0.0.0.0", "--port", "10000"]
+
+# Для чекера можно в Render создать отдельный worker:
+# CMD ["python", "checker.py"]

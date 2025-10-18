@@ -1,6 +1,7 @@
+# bot.py — надёжный вариант с детальным логированием и резолвом channel -> chat_id
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, WebAppInfo
@@ -10,18 +11,16 @@ from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
-# =======================
-# Настройки
-# =======================
 load_dotenv()
+
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 10))  # для теста можно 10 секунд
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip()
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 10))  # seconds, reduce for testing
 
-# =======================
-# Инициализация
-# =======================
+if not TOKEN or not MONGO_URI:
+    raise SystemExit("ERROR: BOT_TOKEN and MONGO_URI must be set in environment or .env")
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI()
@@ -31,81 +30,185 @@ db = mongo["mybot_db"]
 pending = db["pendingsubs"]
 users = db["users"]
 
-# =======================
-# Функция одной итерации проверки очереди
-# =======================
+# -----------------------
+# Helpers
+# -----------------------
+def now_str():
+    return datetime.utcnow().isoformat()
+
+async def safe_set_webhook(url: str, max_retries: int = 5):
+    backoff = 1
+    for attempt in range(1, max_retries + 1):
+        try:
+            await bot.set_webhook(url)
+            print(f"[{now_str()}] ✅ Webhook установлен: {url}")
+            return True
+        except Exception as e:
+            print(f"[{now_str()}] ⚠️ Попытка {attempt}/{max_retries} установить webhook не удалась: {e}")
+            # если Telegram просит retry_after, выдержим паузу (если есть)
+            if "retry after" in str(e).lower() or "too many requests" in str(e).lower() or "flood" in str(e).lower():
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+            else:
+                # для остальных ошибок даём небольшую паузу и пробуем ещё
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+    print(f"[{now_str()}] ❌ Не удалось установить webhook после {max_retries} попыток")
+    return False
+
+async def resolve_chat_id(raw_channel):
+    """
+    Попытки получить числовой chat_id:
+    - если raw_channel уже число (int or string startswith -100), возвращаем int
+    - пробуем bot.get_chat(raw) (raw может быть '@username' или 'username' или numeric string)
+    - пробуем добавить '@' если не начинается с '@'
+    Возвращает (chat_id:int) или None при ошибке (и печатает лог).
+    """
+    if raw_channel is None:
+        return None
+
+    # если это уже число-строка или число
+    try:
+        if isinstance(raw_channel, int):
+            return raw_channel
+        chs = str(raw_channel).strip()
+        # numeric channel id like -1001234567890
+        if chs.lstrip("-").isdigit():
+            return int(chs)
+    except Exception:
+        pass
+
+    # Попробуем напрямую получить чат (works with @username or username)
+    candidates = [str(raw_channel).strip()]
+    if not str(raw_channel).startswith("@"):
+        candidates.append("@" + str(raw_channel).strip())
+
+    for cand in candidates:
+        try:
+            chat = await bot.get_chat(cand)
+            print(f"[{now_str()}] ℹ️ get_chat('{cand}') -> id={chat.id}, type={chat.type}, title={getattr(chat,'title',None)}")
+            return int(chat.id)
+        except Exception as e:
+            print(f"[{now_str()}] ⚠️ get_chat('{cand}') failed: {e}")
+
+    print(f"[{now_str()}] ❌ Не удалось резолвить channel '{raw_channel}' в chat_id")
+    return None
+
+# -----------------------
+# Основная логика проверки одной итерации
+# -----------------------
 async def process_queue_iteration():
     now = datetime.utcnow()
-    print(f"[{datetime.utcnow()}] 🔄 Проверка очереди подписок...")
+    print(f"[{now_str()}] 🔄 Начало итерации проверки очереди (now={now.isoformat()})")
+    # Найдём задачи, у которых checkAfter <= now и статус waiting
+    cursor = pending.find({"status": "waiting", "checkAfter": {"$lte": now}})
+    async for task in cursor:
+        tid = str(task.get("_id"))
+        telegram_id_raw = task.get("telegramId")
+        channel_raw = task.get("channel")
+        reward = int(task.get("reward", 15))
 
-    async for task in pending.find({"status": "waiting", "checkAfter": {"$lte": now}}):
-        telegram_id = str(task["telegramId"])
-        channel = task["channel"]  # должно быть @username или -100ID
-        reward = task.get("reward", 15)
+        print(f"[{now_str()}] ▶ Task {tid}: telegramId={telegram_id_raw!r}, channel={channel_raw!r}, reward={reward}")
 
-        print(f"[{datetime.utcnow()}] Проверяем: telegram_id={telegram_id}, channel={channel}, reward={reward}")
-
-        # Проверяем, есть ли пользователь уже в subscribedChannels
-        user_doc = await users.find_one({"telegramId": telegram_id})
-        if user_doc and channel in user_doc.get("subscribedChannels", []):
-            print(f"[{datetime.utcnow()}] Пользователь уже подписан, пропускаем")
-            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
+        # Приведём telegram id к int
+        try:
+            user_id = int(str(telegram_id_raw).strip())
+        except Exception as e:
+            print(f"[{now_str()}] ❌ Неверный telegramId в задаче {tid}: {telegram_id_raw!r} — помечаю failed ({e})")
+            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": "invalid telegramId"}})
             continue
 
-        try:
-            member = await bot.get_chat_member(chat_id=channel, user_id=int(telegram_id))
-            print(f"[{datetime.utcnow()}] Статус пользователя в канале {channel}: {member.status}")
+        # Резолвим channel -> chat_id
+        chat_id = await resolve_chat_id(channel_raw)
+        if chat_id is None:
+            # если не резолвится — пометим failed (но можно менять на skipped, если нужно)
+            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": "channel_resolve_failed"}})
+            print(f"[{now_str()}] ❌ Task {tid}: channel resolution failed, set status=failed")
+            continue
 
-            if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                await users.update_one(
-                    {"telegramId": telegram_id},
+        # Проверим, не было ли уже подписки зарегистрировано у пользователя
+        try:
+            user_doc = await users.find_one({"telegramId": str(user_id)})
+            if user_doc:
+                subs = user_doc.get("subscribedChannels", [])
+                # сравниваем по chat_id строкой/числом — унифицируем хранение как строка chat_id
+                if str(chat_id) in [str(s) for s in subs]:
+                    print(f"[{now_str()}] ℹ️ Task {tid}: пользователь {user_id} уже в subscribedChannels -> пометил skipped")
+                    await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "skipped"}})
+                    continue
+        except Exception as e:
+            print(f"[{now_str()}] ⚠️ Ошибка чтения users для task {tid}: {e}")
+
+        # Попробуем получить статус участника
+        try:
+            member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+            status = getattr(member, "status", None)
+            print(f"[{now_str()}] ℹ️ Task {tid}: get_chat_member(chat_id={chat_id}, user_id={user_id}) -> status={status}")
+        except Exception as e:
+            print(f"[{now_str()}] ⚠️ Ошибка get_chat_member для task {tid}, chat_id={chat_id}, user_id={user_id}: {e}")
+            # запишем причину в задачу и пометим failed
+            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": f"get_chat_member_error: {str(e)}"}})
+            continue
+
+        # Если подписан — начисляем
+        if status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER):
+            try:
+                res = await users.update_one(
+                    {"telegramId": str(user_id)},
                     {
                         "$inc": {"balance": reward, "totalEarned": reward},
-                        "$addToSet": {"subscribedChannels": channel}
+                        "$addToSet": {"subscribedChannels": str(chat_id)}
                     },
                     upsert=True
                 )
-                await bot.send_message(telegram_id, f"🎉 Ты был подписан и получил {reward}⭐!")
-                await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded"}})
-                print(f"[{datetime.utcnow()}] ✅ Reward начислен для {telegram_id}")
-            else:
-                await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
-                print(f"[{datetime.utcnow()}] ❌ Пользователь не подписан: {telegram_id}")
+                print(f"[{now_str()}] ✅ Task {tid}: Reward начислен (mongo modified={getattr(res,'modified_count',None)})")
+                try:
+                    await bot.send_message(user_id, f"🎉 Ты был подписан на канал и получил {reward}⭐!")
+                    print(f"[{now_str()}] ℹ️ Уведомление отправлено пользователю {user_id}")
+                except Exception as e_send:
+                    print(f"[{now_str()}] ⚠️ Не удалось отправить уведомление пользователю {user_id}: {e_send}")
+                await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "rewarded", "processedAt": datetime.utcnow()}})
+            except Exception as e:
+                print(f"[{now_str()}] ❌ Ошибка при обновлении users/pending для task {tid}: {e}")
+                await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": f"mongo_update_error: {e}"}})
+        else:
+            # не подписан
+            print(f"[{now_str()}] ❌ Task {tid}: пользователь {user_id} не является участником ({status}) — помечаю failed")
+            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "memberStatus": str(status)}})
 
-        except Exception as e:
-            print(f"[{datetime.utcnow()}] ⚠️ Ошибка get_chat_member для {telegram_id} в {channel}: {e}")
-            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed"}})
+    print(f"[{now_str()}] ⏱ Итерация завершена")
 
-# =======================
-# Фоновый цикл проверки очереди
-# =======================
+# -----------------------
+# Фоновый цикл
+# -----------------------
 async def background_checker():
     while True:
         try:
             await process_queue_iteration()
         except Exception as e:
-            print(f"[{datetime.utcnow()}] Ошибка в background_checker: {e}")
+            print(f"[{now_str()}] ❌ Фатальная ошибка в background_checker: {e}")
         await asyncio.sleep(CHECK_INTERVAL)
 
-# =======================
-# /start handler
-# =======================
+# -----------------------
+# Handlers и Webhook
+# -----------------------
 @dp.message(Command(commands=["start"]))
 async def start_handler(message: types.Message):
     image_path = "images/gemad.jpg"
-    photo = FSInputFile(image_path)
+    try:
+        photo = FSInputFile(image_path)
+    except Exception as e:
+        print(f"[{now_str()}] ⚠️ Ошибка открытия изображения: {e}")
+        photo = None
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton("Открыть мини-апп", web_app=WebAppInfo(url="https://gemad.onrender.com/"))]
-        ]
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Открыть мини-апп", web_app=WebAppInfo(url="https://gemad.onrender.com/"))]
+    ])
+    if photo:
+        await message.answer_photo(photo=photo, caption="Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
+    else:
+        await message.answer("Привет! (картинка не найдена)", reply_markup=keyboard)
 
-    await message.answer_photo(photo=photo, caption="Привет! Вот кнопка для мини-апп.", reply_markup=keyboard)
-
-# =======================
-# Webhook
-# =======================
 @app.post("/")
 async def telegram_webhook(request: Request):
     data = await request.json()
@@ -117,20 +220,23 @@ async def telegram_webhook(request: Request):
 def root():
     return PlainTextResponse("Bot is running!")
 
-# =======================
-# Startup и Shutdown
-# =======================
+# -----------------------
+# Startup / Shutdown
+# -----------------------
 @app.on_event("startup")
 async def on_startup():
-    try:
-        await bot.set_webhook(WEBHOOK_URL)
-        print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    except Exception as e:
-        print(f"⚠️ Не удалось установить вебхук: {e}")
+    if WEBHOOK_URL:
+        await safe_set_webhook(WEBHOOK_URL)
+    else:
+        print(f"[{now_str()}] ⚠️ WEBHOOK_URL пустой — не ставлю webhook")
+
     asyncio.create_task(background_checker())
-    print("🚀 Фоновый чекер запущен...")
+    print(f"[{now_str()}] 🚀 Background checker запущен (interval={CHECK_INTERVAL}s)")
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    await bot.session.close()
-    print("🛑 Bot session закрыт")
+    try:
+        await bot.session.close()
+        print(f"[{now_str()}] 🛑 Bot session закрыт")
+    except Exception as e:
+        print(f"[{now_str()}] ⚠️ Ошибка при закрытии bot.session: {e}")
