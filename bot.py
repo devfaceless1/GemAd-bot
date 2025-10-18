@@ -219,16 +219,11 @@ def root():
 async def on_startup():
     if WEBHOOK_URL:
         await safe_set_webhook(WEBHOOK_URL)
-    else:
-        print(f"[{now_str()}] ⚠️ WEBHOOK_URL пустой — не ставлю webhook")
-
+    # Фоновый цикл не блокирует стартап
     asyncio.create_task(background_checker())
     print(f"[{now_str()}] 🚀 Background checker запущен (interval={CHECK_INTERVAL}s)")
 
+
 @app.on_event("shutdown")
 async def on_shutdown():
-    try:
-        await bot.session.close()
-        print(f"[{now_str()}] 🛑 Bot session закрыт")
-    except Exception as e:
-        print(f"[{now_str()}] ⚠️ Ошибка при закрытии bot.session: {e}")
+    print(f"[{now_str()}] ⚠️ FastAPI shutdown — фоновые задачи могут быть обрезаны")
