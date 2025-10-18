@@ -26,8 +26,8 @@ dp = Dispatcher()
 app = FastAPI()
 
 mongo = AsyncIOMotorClient(MONGO_URI)
-db = mongo["mybot_db"]
-pending = db["pendingsubs"]
+db = mongo["test"]
+pending = db["pendings"]
 users = db["users"]
 
 # -----------------------
