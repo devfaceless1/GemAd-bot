@@ -168,13 +168,7 @@ async def process_queue_iteration():
             print(f"[{now_str()}] ❌ Task {tid}: пользователь {user_id} не является участником ({status_str}) — помечаю failed")
             await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "memberStatus": str(status_enum)}})
 
-            await pending.delete_one({"_id": task["_id"]})
-        print(f"[{now_str()}] 🗑 Task {tid} удалена из базы после reward")
-        
-        except Exception as e:
-            print(f"[{now_str()}] ❌ Ошибка при обновлении users/pending для task {tid}: {e}")
-            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": f"mongo_update_error: {e}"}})
-        print(f"[{now_str()}] ⏱ Итерация завершена")
+    print(f"[{now_str()}] ⏱ Итерация завершена")
 
 # -----------------------
 # Фоновый цикл
