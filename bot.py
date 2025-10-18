@@ -133,15 +133,13 @@ async def process_queue_iteration():
             print(f"[{now_str()}] ⚠️ Ошибка чтения users для task {tid}: {e}")
 
         # Попробуем получить статус участника
-                # Попробуем получить статус участника
         try:
             member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-            status = getattr(member, "status", None)
-            status_str = str(status).lower() if status else None
+            status_enum = getattr(member, "status", None)
+            status_str = status_enum.value.lower() if status_enum else None  # ✅ правильное приведение enum -> str
             print(f"[{now_str()}] ℹ️ Task {tid}: get_chat_member(chat_id={chat_id}, user_id={user_id}) -> status={status_str}")
         except Exception as e:
             print(f"[{now_str()}] ⚠️ Ошибка get_chat_member для task {tid}, chat_id={chat_id}, user_id={user_id}: {e}")
-            # запишем причину в задачу и пометим failed
             await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": f"get_chat_member_error: {str(e)}"}})
             continue
 
@@ -167,9 +165,8 @@ async def process_queue_iteration():
                 print(f"[{now_str()}] ❌ Ошибка при обновлении users/pending для task {tid}: {e}")
                 await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "error": f"mongo_update_error: {e}"}})
         else:
-            # не подписан
             print(f"[{now_str()}] ❌ Task {tid}: пользователь {user_id} не является участником ({status_str}) — помечаю failed")
-            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "memberStatus": str(status)}})
+            await pending.update_one({"_id": task["_id"]}, {"$set": {"status": "failed", "memberStatus": str(status_enum)}})
 
     print(f"[{now_str()}] ⏱ Итерация завершена")
 
