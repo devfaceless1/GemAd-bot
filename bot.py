@@ -188,7 +188,7 @@ async def start_handler(message: types.Message):
         [InlineKeyboardButton(text="Open Mini App", web_app=WebAppInfo(url="https://gemad.onrender.com/"))]
     ])
     if photo:
-        await message.answer_photo(photo=photo, caption="Hello! Tap to open the mini app.", reply_markup=keyboard)
+        await message.answer_photo(photo=photo, caption="Welcome to GemAd 🚀 Earn the Telegram Stars right now!", reply_markup=keyboard)
     else:
         await message.answer("Hello! (image not found)", reply_markup=keyboard)
 
